@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ML Runner View</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            font-family: sans-serif;
+            margin-top: 50px;
+        }
+
+        /* Two columns layout */
+        .main-container {
+            display: flex;
+            gap: 40px;
+            align-items: flex-start;
+        }
+
+        .column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .box {
+            width: 400px;
+            height: 100px;
+            border: 2px solid black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .btn:active {
+            background-color: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="main-container">
+        <!-- LEFT COLUMN (Python Engine Driven) -->
+        <div class="column">
+            <h2 id="current_number_title">CURRENT NUMBER</h2>
+            <div id="current_number" class="box">0</div>
+            <div id="is_running" class="box btn">IS RUNNING : False</div>
+            <div id="nuke" class="box btn">NUKE : False</div>
+        </div>
+
+        <!-- RIGHT COLUMN (Pure Client-Side JS Driven) -->
+        <div class="column">
+            <h2>IN VIEW</h2>
+            <div id="in_view" class="box">0</div>
+        </div>
+    </div>
+
+    <script>
+        const ws = new WebSocket(`ws://${window.location.host}/ws`);
+        const inViewBox = document.getElementById("in_view");
+
+        // --- PURE JS "IN VIEW" ENGINE ---
+        let inViewCount = 0;
+        let inViewInterval = null;
+
+        function startInView() {
+            if (!inViewInterval) {
+                // 60 frames per second on client
+                inViewInterval = setInterval(() => {
+                    inViewCount++;
+                    inViewBox.textContent = inViewCount;
+                }, 1000 / 60);
+            }
+        }
+
+        function stopInView() {
+            if (inViewInterval) {
+                clearInterval(inViewInterval);
+                inViewInterval = null;
+            }
+        }
+
+        function nukeInView() {
+            stopInView();
+            inViewCount = 0;
+            inViewBox.textContent = 0;
+        }
+
+        // --- WEBSOCKET LISTENER & DISPATCHER ---
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+
+            for (const [key, item] of Object.entries(data)) {
+                // 1. Update Title Header if key matches
+                const titleElem = document.getElementById(`${key}_title`);
+                if (titleElem && item.text) {
+                    titleElem.textContent = item.text;
+                }
+
+                // 2. Update Python-driven Boxes & Buttons
+                const elem = document.getElementById(key);
+                if (elem) {
+                    if (elem.classList.contains("btn")) {
+                        const boolVal = item.value ? "True" : "False";
+                        elem.textContent = `${item.text} : ${boolVal}`;
+                    } else {
+                        elem.textContent = item.value;
+                    }
+                }
+
+                // 3. Reactively control IN VIEW counter from state flow
+                if (key === "is_running") {
+                    if (item.value === true) {
+                        startInView();
+                    } else {
+                        stopInView();
+                    }
+                }
+
+                // If current number resets to 0 (NUKE action), reset IN VIEW
+                if (key === "current_number" && item.value === 0) {
+                    nukeInView();
+                }
+            }
+        };
+
+        // Send button clicks as commands to Python
+        document.querySelectorAll(".btn").forEach(btn => {
+            btn.onclick = () => ws.send(btn.id);
+        });
+    </script>
+</body>
+</html>
